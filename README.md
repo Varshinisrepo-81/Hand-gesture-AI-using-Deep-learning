@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Hand Gesture Recognition using Deep Learning and Streamlit 🖐️🤖
 
 An end-to-end Computer Vision and Deep Learning system for real-time hand gesture recognition. Powered by **Google MediaPipe**, a **TensorFlow/Keras Deep Neural Network**, and an interactive **Streamlit** web application with **SQLite** audit logging.
@@ -199,3 +200,37 @@ The test suite covers:
 - **TensorFlow/Keras:** Deep Learning framework
 - **Streamlit:** Python Web Application framework
 - **OpenCV:** Real-time Computer Vision Library
+=======
+# Hand-gesture-AI-using-Deep-learning
+Real-time Hand Gesture Recognition using Deep Learning, OpenCV, MediaPipe, Python, and Streamlit.
+# 👋 Hand Gesture Recognition Using Deep Learning
+
+## 📌 About
+A real-time hand gesture recognition system using deep learning, computer vision, and a webcam.
+
+## 🛠️ Technologies Used
+- 🐍 Python
+- 🌐 Streamlit
+- 📷 OpenCV
+- ✋ MediaPipe
+- 🧠 TensorFlow
+- 🔢 NumPy
+- 📊 pandas & scikit-learn
+- 🖼️ Pillow
+
+## ✋ Supported Gestures
+- 🖐️ Open Palm
+- ✊ Fist
+- 👍 Thumbs-Up
+- ✌️ Peace Sign
+- 👆 Pointing Finger
+
+## ✨ Features
+- 🎥 Real-time webcam detection
+- 🤖 Deep learning-based classification
+- 📈 Prediction confidence score
+- 📝 Gesture history
+- 📊 Model evaluation
+
+
+>>>>>>> 2d802d4a671efe5ef44f420c4e67320135bc25ce
