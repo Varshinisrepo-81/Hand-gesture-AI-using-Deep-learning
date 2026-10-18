@@ -1,4 +1,3 @@
-
 """
 Hand Gesture Recognition using Deep Learning and Streamlit.
 Main application orchestrating:
@@ -125,6 +124,12 @@ with st.sidebar:
     else:
         st.markdown('<span class="pill-badge pill-danger">● Model: Missing</span>', unsafe_allow_html=True)
 
+    # Detector status
+    if st.session_state.detector is not None:
+        st.markdown('<span class="pill-badge pill-success">● MediaPipe: Ready</span>', unsafe_allow_html=True)
+    else:
+        st.markdown('<span class="pill-badge pill-danger">● MediaPipe: Error</span>', unsafe_allow_html=True)
+
     # Dataset status
     has_dataset = os.path.exists(DATASET_PATH)
     if has_dataset:
@@ -218,6 +223,13 @@ elif page == "📷 Live Recognition":
         st.error(
             "⚠️ **Model Not Found!** No trained model detected at `models/gesture_model.keras`. "
             "Please go to the **⚡ Model Training** tab and train the model first."
+        )
+        st.stop()
+
+    if st.session_state.detector is None:
+        st.error(
+            "⚠️ **MediaPipe HandDetector Failed to Initialize!** "
+            "Please check your package dependencies (`mediapipe`, `opencv-python`) in your environment."
         )
         st.stop()
 
