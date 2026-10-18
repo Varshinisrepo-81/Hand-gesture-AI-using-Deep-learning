@@ -53,6 +53,20 @@ from database.db_manager import DatabaseManager
 
 
 # ---------------------------------------------------------
+# Page Configuration
+# ---------------------------------------------------------
+st.set_page_config(
+    page_title="Hand Gesture Recognition AI",
+    page_icon="🖐️",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# Inject Custom Styling
+inject_custom_css()
+
+
+# ---------------------------------------------------------
 # Session State Initialization
 # ---------------------------------------------------------
 if "camera_running" not in st.session_state:
@@ -73,28 +87,7 @@ if "detector" not in st.session_state:
         st.session_state.detector = HandDetector()
     except Exception as e:
         st.session_state.detector = None
-        # Log error quietly without crashing the UI thread
         print(f"MediaPipe initialization warning: {e}")
-# ---------------------------------------------------------
-# Session State Initialization
-# ---------------------------------------------------------
-if "camera_running" not in st.session_state:
-    st.session_state.camera_running = False
-
-if "last_logged_time" not in st.session_state:
-    st.session_state.last_logged_time = 0.0
-
-if "db" not in st.session_state:
-    st.session_state.db = DatabaseManager()
-
-if "predictor" not in st.session_state:
-    st.session_state.predictor = GesturePredictor()
-
-if "detector" not in st.session_state:
-    try:
-        st.session_state.detector = HandDetector()
-    except Exception as e:
-        st.session_state.detector = None
 
 
 # ---------------------------------------------------------
