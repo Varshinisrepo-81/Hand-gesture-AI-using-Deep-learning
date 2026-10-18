@@ -1,7 +1,9 @@
-mediapipe>=0.10.14
-opencv-python-headless>=4.9.0.80
-tensorflow>=2.15.0
-streamlit>=1.32.0
+mediapipe==0.10.14
+protobuf==3.20.3; python_version < '3.11'
+protobuf==4.25.3; python_version >= '3.11'
+opencv-python-headless==4.9.0.80
+tensorflow==2.15.0
+streamlit==1.32.0
 scikit-learn>=1.2.0
 seaborn>=0.12.0
 numpy<2.0.0
