@@ -1,4 +1,3 @@
-
 streamlit
 opencv-python-headless
 mediapipe
@@ -7,3 +6,4 @@ pandas
 scikit-learn
 tensorflow==2.20.0
 Pillow
+seaborn
