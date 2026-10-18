@@ -1,3 +1,4 @@
+
 """
 Hand Gesture Recognition using Deep Learning and Streamlit.
 Main application orchestrating:
@@ -482,4 +483,230 @@ elif page == "📷 Live Recognition":
             with col_u_img:
                 landmarks, handed = st.session_state.detector.detect(img_bgr)
                 if landmarks:
-                    annotated = st.session_state.detector.draw_landmarks(img_b
+                    annotated = st.session_state.detector.draw_landmarks(img_bgr, landmarks, handed)
+                    pred = st.session_state.predictor.predict(landmarks)
+                    annotated = st.session_state.detector.draw_hud_overlay(
+                        annotated, gesture=pred["gesture"], confidence=pred["confidence"], is_low_conf=pred["is_low_confidence"]
+                    )
+                    st.image(annotated[:, :, ::-1], channels="RGB", use_container_width=True)
+                else:
+                    st.image(img_np, channels="RGB", use_container_width=True)
+                    st.warning("No hand landmarks detected.")
+
+            with col_u_res:
+                if landmarks and pred:
+                    st.success(f"**Recognized:** {pred['gesture']}")
+                    st.metric("Confidence", f"{pred['confidence'] * 100:.1f}%")
+                    render_softmax_bars(pred["probabilities"])
+                    if st.button("💾 Log Upload Prediction"):
+                        st.session_state.db.log_prediction(
+                            gesture=pred["raw_gesture"], confidence=pred["confidence"], landmarks_count=21, notes=f"Uploaded: {uploaded_file.name}"
+                        )
+                        st.toast("Saved!", icon="✅")
+
+
+# ---------------------------------------------------------
+# PAGE 3: MODEL TRAINING
+# ---------------------------------------------------------
+elif page == "⚡ Model Training":
+    render_brand_header(
+        title="Model Training Studio",
+        subtitle="Train a genuine TensorFlow/Keras neural network with live progress callbacks",
+        badge_text="TensorFlow Keras MLP"
+    )
+
+    t_col1, t_col2 = st.columns([3, 2])
+
+    with t_col1:
+        st.markdown("### 📊 Dataset Preparation")
+        ds_tab1, ds_tab2 = st.tabs(["🖼️ 100 Image Dataset", "⚙️ Kinematic Generator"])
+
+        with ds_tab1:
+            st.markdown("#### 📁 Image Folders (`data/images/`)")
+            img_counts = {}
+            for g in GESTURE_CLASSES:
+                p = os.path.join(IMAGES_DIR, g)
+                os.makedirs(p, exist_ok=True)
+                img_counts[g] = len([f for f in os.listdir(p) if f.lower().endswith(('.jpg', '.png', '.jpeg'))])
+
+            total_imgs = sum(img_counts.values())
+            st.caption(f"Total collected images: **{total_imgs} images**")
+            
+            num_cols = 4
+            for row_idx in range(0, len(GESTURE_CLASSES), num_cols):
+                cols = st.columns(num_cols)
+                for col_idx, g in enumerate(GESTURE_CLASSES[row_idx:row_idx + num_cols]):
+                    with cols[col_idx]:
+                        count = img_counts.get(g, 0)
+                        st.metric(g, f"{count} imgs")
+
+            img_action_col1, img_action_col2 = st.columns(2)
+            with img_action_col1:
+                if st.button("📸 Process Images to Training CSV", type="secondary", use_container_width=True):
+                    with st.spinner("Extracting landmarks..."):
+                        proc_stats = process_image_directory(images_dir=IMAGES_DIR, output_csv=DATASET_PATH)
+                    st.success(f"Extracted {proc_stats['successful_detections']}/{proc_stats['total_images']} samples!")
+                    st.rerun()
+
+            with img_action_col2:
+                if st.button("🔄 Regenerate Sample Images", use_container_width=True):
+                    with st.spinner("Generating sample images..."):
+                        generate_100_images_dataset(images_per_class=20)
+                    st.success("Sample images generated successfully!")
+                    st.rerun()
+
+        with ds_tab2:
+            st.markdown("#### ⚙️ Kinematic 3D Generator")
+            samples_per_class = st.slider("Samples per gesture class", min_value=100, max_value=1000, value=500, step=50)
+            if st.button("🔨 Generate Kinematic Dataset"):
+                with st.spinner("Generating dataset..."):
+                    generate_synthetic_dataset(samples_per_class=samples_per_class, output_path=DATASET_PATH)
+                st.success("Generated samples successfully!")
+                st.rerun()
+
+        if os.path.exists(DATASET_PATH):
+            df_ds = pd.read_csv(DATASET_PATH)
+            st.info(f"📋 **Current Active CSV:** `{len(df_ds):,}` samples ready.")
+
+    with t_col2:
+        st.markdown("### 🎛️ Training Hyperparameters")
+        epochs = st.slider("Epochs", min_value=10, max_value=100, value=35, step=5)
+        batch_size = st.select_slider("Batch Size", options=[16, 32, 64, 128], value=32)
+        learning_rate = st.selectbox("Learning Rate", options=[0.001, 0.0005, 0.0001], index=0)
+
+    st.markdown("---")
+    st.markdown("### 🚀 Execute Model Training")
+    train_btn = st.button("🔥 Start Model Training", type="primary", use_container_width=True)
+
+    if train_btn:
+        if not os.path.exists(DATASET_PATH):
+            st.error("Please generate or provide the dataset first!")
+        else:
+            progress_bar = st.progress(0)
+            epoch_status = st.empty()
+            loss_status = st.empty()
+
+            def on_progress(epoch, total_epochs, logs):
+                pct = epoch / total_epochs
+                progress_bar.progress(pct)
+                epoch_status.markdown(f"**Epoch {epoch} of {total_epochs}**")
+                loss_status.markdown(f"• Train Loss: `{logs.get('loss', 0):.4f}` | Val Acc: `{logs.get('val_accuracy', 0) * 100:.2f}%`")
+
+            with st.spinner("Training TensorFlow/Keras neural network..."):
+                metrics = train_gesture_pipeline(
+                    dataset_path=DATASET_PATH,
+                    epochs=epochs,
+                    batch_size=batch_size,
+                    learning_rate=learning_rate,
+                    progress_callback=on_progress
+                )
+
+            progress_bar.progress(1.0)
+            st.success("🎉 **Training Complete!**")
+
+            st.session_state.predictor.load_model_and_labels()
+
+            res1, res2, res3, res4 = st.columns(4)
+            with res1:
+                st.metric("Test Accuracy", f"{metrics.get('test_accuracy', 0) * 100:.2f}%")
+            with res2:
+                st.metric("Test Loss", f"{metrics.get('test_loss', 0):.4f}")
+            with res3:
+                st.metric("Test Samples", str(metrics.get('test_samples', 0)))
+            with res4:
+                st.metric("Classes", str(len(GESTURE_CLASSES)))
+
+
+# ---------------------------------------------------------
+# PAGE 4: EVALUATION
+# ---------------------------------------------------------
+elif page == "📊 Evaluation":
+    render_brand_header(
+        title="Model Evaluation & Analytics",
+        subtitle="Deep inspection of confusion matrices, per-class metrics, and training loss curves",
+        badge_text="Performance Metrics"
+    )
+
+    if not st.session_state.predictor.is_model_loaded():
+        st.error("⚠️ Model not found. Please train the model first in the **⚡ Model Training** tab.")
+        st.stop()
+
+    eval_tab1, eval_tab2, eval_tab3 = st.tabs([
+        "📈 Confusion Matrix",
+        "📉 Training Curves",
+        "📋 Per-Class Report"
+    ])
+
+    with eval_tab1:
+        st.markdown("#### 🔍 Confusion Matrix on Test Split")
+        try:
+            fig_cm = plot_confusion_matrix()
+            if fig_cm:
+                st.pyplot(fig_cm)
+            else:
+                st.info("Confusion matrix plot could not be generated.")
+        except Exception as e:
+            st.warning(f"Could not render confusion matrix: {e}")
+
+    with eval_tab2:
+        st.markdown("#### 📈 Training & Validation Curves")
+        try:
+            fig_curves = plot_training_curves()
+            if fig_curves:
+                st.pyplot(fig_curves)
+            else:
+                st.info("Training history not found.")
+        except Exception as e:
+            st.warning(f"Could not render training curves: {e}")
+
+    with eval_tab3:
+        st.markdown("#### 📋 Per-Class Performance Breakdown")
+        try:
+            per_class_df = get_per_class_table()
+            if per_class_df is not None and not per_class_df.empty:
+                st.dataframe(per_class_df, use_container_width=True)
+            else:
+                st.info("Per-class performance table unavailable.")
+        except Exception as e:
+            st.warning(f"Could not load per-class report: {e}")
+
+
+# ---------------------------------------------------------
+# PAGE 5: PREDICTION HISTORY
+# ---------------------------------------------------------
+elif page == "📜 Prediction History":
+    render_brand_header(
+        title="Prediction History & Telemetry",
+        subtitle="Inspect logged predictions stored in SQLite and export telemetry reports as CSV",
+        badge_text="SQLite & CSV Export"
+    )
+
+    col_h1, col_h2 = st.columns([3, 1])
+    with col_h1:
+        st.markdown("### 📋 Recent Model Inferences")
+    with col_h2:
+        if st.button("🗑️ Clear History", type="secondary", use_container_width=True):
+            st.session_state.db.clear_history()
+            st.toast("Prediction history cleared!", icon="🗑️")
+            st.rerun()
+
+    history_df = st.session_state.db.get_prediction_history(limit=100)
+
+    if history_df.empty:
+        st.info(
+            "📭 **No predictions logged yet.**\n\n"
+            "Use **📷 Live Recognition** with 'Auto-log to SQLite' enabled, or log manual snapshots/uploads."
+        )
+    else:
+        st.dataframe(history_df, use_container_width=True)
+
+        st.markdown("---")
+        st.markdown("### 📥 Export Options")
+        csv_data = history_df.to_csv(index=False).encode('utf-8')
+        st.download_button(
+            label="📥 Download Full History as CSV",
+            data=csv_data,
+            file_name=f"gesture_predictions_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+            mime="text/csv",
+            type="primary"
+        )
