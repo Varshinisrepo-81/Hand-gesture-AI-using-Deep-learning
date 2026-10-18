@@ -1,9 +1,8 @@
-streamlit
-opencv-python-headless
-mediapipe
-numpy
+mediapipe==0.10.9
+opencv-python-headless==4.9.0.80
+tensorflow==2.15.0
+streamlit==1.32.0
+numpy<2.0.0
 pandas
-scikit-learn
-tensorflow==2.20.0
-Pillow
-seaborn
+pillow
+matplotlib
