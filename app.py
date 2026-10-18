@@ -84,8 +84,15 @@ if "predictor" not in st.session_state:
 if "detector" not in st.session_state:
     try:
         st.session_state.detector = HandDetector()
-    except Exception as e:
+    except Exception:
         st.session_state.detector = None
+
+
+def _require_detector() -> None:
+    """Stops the app if the MediaPipe detector is unavailable."""
+    if st.session_state.get("detector") is None:
+        st.error("⚠️ MediaPipe hand detector could not initialize. Please restart the app or check your environment.")
+        st.stop()
 
 
 # ---------------------------------------------------------
@@ -128,7 +135,7 @@ with st.sidebar:
     has_dataset = os.path.exists(DATASET_PATH)
     if has_dataset:
         try:
-            df_info = pd.read_csv(DATASET_PATH, nrows=1)
+            pd.read_csv(DATASET_PATH, nrows=1)
             st.markdown('<span class="pill-badge pill-success">● Dataset: Ready</span>', unsafe_allow_html=True)
         except Exception:
             st.markdown('<span class="pill-badge pill-warning">● Dataset: Error</span>', unsafe_allow_html=True)
@@ -171,7 +178,7 @@ if page == "🏠 Home":
             1. **Video Ingestion:** Live OpenCV frame acquisition with Windows `CAP_DSHOW` acceleration.
             2. **MediaPipe Landmark Extraction:** Extracts 21 3D skeletal landmarks (x, y, z) per hand in real-time.
             3. **Invariant Preprocessing:** Normalizes landmarks relative to the wrist (landmark 0) and scales by maximum hand span, guaranteeing **translation and scale invariance**.
-            4. **Deep Neural Network Classifier:** Feedforward deep neural network (Dense 256 → BatchNorm → Dropout 0.25 → Dense 128 → BatchNorm → Dropout 0.20 → Dense 64 → Dropout 0.15 → Dense 32 Softmax).
+            4. **Deep Neural Network Classifier:** Feedforward deep neural network (Dense 256 → BatchNorm → Dropout 0.25 → Dense 128 → BatchNorm → Dropout 0.20 → Dense 64 → Dropout 0.15 [...]
             5. **Low-Confidence Filtering:** Threshold-based rejection filters out ambiguous or transitional poses.
             6. **Telemetry & Database Logging:** Automatic or manual logging of predictions to SQLite for auditing and CSV export.
             """
@@ -194,13 +201,16 @@ if page == "🏠 Home":
         )
 
         # Overview stats
-        stats = st.session_state.db.get_prediction_statistics()
-        st.markdown("#### 📈 Database Quick Metrics")
-        m1, m2 = st.columns(2)
-        with m1:
-            render_metric_card("Total Predictions", str(stats["total_predictions"]))
-        with m2:
-            render_metric_card("Avg Confidence", f"{stats['average_confidence'] * 100:.1f}%")
+        try:
+            stats = st.session_state.db.get_prediction_statistics()
+            st.markdown("#### 📈 Database Quick Metrics")
+            m1, m2 = st.columns(2)
+            with m1:
+                render_metric_card("Total Predictions", str(stats["total_predictions"]))
+            with m2:
+                render_metric_card("Avg Confidence", f"{stats['average_confidence'] * 100:.1f}%")
+        except Exception:
+            st.warning("Database is empty or not ready yet.")
 
 
 # ---------------------------------------------------------
@@ -219,6 +229,8 @@ elif page == "📷 Live Recognition":
             "Please go to the **⚡ Model Training** tab and train the model first."
         )
         st.stop()
+
+    _require_detector()
 
     rec_tab1, rec_tab2, rec_tab3 = st.tabs([
         "🎥 Live Webcam Stream",
@@ -307,7 +319,7 @@ elif page == "📷 Live Recognition":
 
         with status_col:
             target_res = CameraManager.PRESETS.get(preset_name, (1280, 720))
-            st.caption(f"🎯 Target Profile: **{preset_name}** | Enhancements: **{'CLAHE ' if enable_clahe else ''}{'Sharpen ' if enable_sharpen else ''}{'Denoise' if enable_denoise else 'Standard'}**")
+            st.caption(f"🎯 Target Profile: **{preset_name}** | Enhancements: **{'CLAHE ' if enable_clahe else ''}{'Sharpen ' if enable_sharpen else ''}{'Denoise' if enable_denoise else 'Standard'}** | {target_res[0]}x{target_res[1]}")
 
         st.markdown("---")
 
@@ -374,7 +386,6 @@ elif page == "📷 Live Recognition":
 
                         gesture_res = None
                         if landmarks:
-                            # Prediction
                             gesture_res = st.session_state.predictor.predict(
                                 landmarks,
                                 confidence_threshold=conf_threshold
@@ -387,7 +398,6 @@ elif page == "📷 Live Recognition":
                                     handedness
                                 )
 
-                            # On-frame HUD
                             annotated_frame = st.session_state.detector.draw_hud_overlay(
                                 annotated_frame,
                                 gesture=gesture_res["gesture"],
@@ -396,7 +406,6 @@ elif page == "📷 Live Recognition":
                                 fps=fps
                             )
 
-                            # Auto-log every 2 seconds
                             if auto_log and not gesture_res["is_low_confidence"]:
                                 if curr_time - st.session_state.last_logged_time > 2.0:
                                     st.session_state.db.log_prediction(
@@ -407,7 +416,6 @@ elif page == "📷 Live Recognition":
                                     )
                                     st.session_state.last_logged_time = curr_time
                         else:
-                            # No hand in frame
                             annotated_frame = st.session_state.detector.draw_hud_overlay(
                                 annotated_frame,
                                 gesture="No Hand Detected",
@@ -416,18 +424,15 @@ elif page == "📷 Live Recognition":
                                 fps=fps
                             )
 
-                        # Render Video Frame
                         frame_rgb = frame[:, :, ::-1] if not draw_skeleton else annotated_frame[:, :, ::-1]
                         video_placeholder.image(frame_rgb, channels="RGB", use_container_width=True)
 
-                        # Render Telemetry
                         with telem_placeholder.container():
                             if gesture_res and landmarks:
                                 disp_name = gesture_res["gesture"]
                                 conf = gesture_res["confidence"]
                                 is_low = gesture_res["is_low_confidence"]
                                 icon = GESTURE_ICONS.get(gesture_res["raw_gesture"], "✋")
-
                                 color = "#f59e0b" if is_low else "#10b981"
 
                                 st.markdown(
@@ -436,15 +441,12 @@ elif page == "📷 Live Recognition":
                                         <div style="font-size:3.5rem;">{icon}</div>
                                         <div class="telemetry-gesture-title" style="color:{color};">{disp_name}</div>
                                         <div class="telemetry-conf-label">Confidence: <b>{conf * 100:.1f}%</b> | Hand: <b>{handedness}</b></div>
-                                        <div style="font-size:0.8rem; color:#8b949e; margin-top:6px;">Quality: <span style="color:#58a6ff; font-weight:600;">{cam.get_resolution_string()}</span> @ <span style="color:#3fb950; font-weight:600;">{fps:.0f} FPS</span></div>
+                                        <div style="font-size:0.8rem; color:#8b949e; margin-top:6px;">Quality: <span style="color:#58a6ff; font-weight:600;">{cam.get_resolution_string()}</span> @ <span style="color:#3f8cff; font-weight:600;">{fps:.1f} FPS</span></div>
                                     </div>
                                     """,
                                     unsafe_allow_html=True
                                 )
-
-                                # Render Softmax Bars
                                 render_softmax_bars(gesture_res["probabilities"])
-
                             else:
                                 st.markdown(
                                     f"""
@@ -452,17 +454,17 @@ elif page == "📷 Live Recognition":
                                         <div style="font-size:3.5rem;">🔍</div>
                                         <div class="telemetry-gesture-title" style="color:#8b949e;">No Hand Detected</div>
                                         <div class="telemetry-conf-label">Position hand clearly within the camera frame</div>
-                                        <div style="font-size:0.8rem; color:#8b949e; margin-top:6px;">Stream: <span style="color:#58a6ff;">{cam.get_resolution_string()}</span> @ <span style="color:#3fb950;">{fps:.0f} FPS</span></div>
+                                        <div style="font-size:0.8rem; color:#8b949e; margin-top:6px;">Stream: <span style="color:#58a6ff;">{cam.get_resolution_string()}</span> @ <span style="color:#3f8cff;">{fps:.1f} FPS</span></div>
                                     </div>
                                     """,
                                     unsafe_allow_html=True
                                 )
 
-                        # Small sleep to maintain UI responsiveness
                         time.sleep(0.015)
 
                 finally:
                     cam.stop()
+                    st.session_state.camera_running = False
 
     # ---------------- TAB 2: BROWSER PHOTO SNAP ----------------
     with rec_tab2:
@@ -473,6 +475,7 @@ elif page == "📷 Live Recognition":
 
         snap_photo = st.camera_input("Take a hand photo")
         if snap_photo is not None:
+            _require_detector()
             image_pil = Image.open(snap_photo)
             img_np = np.array(image_pil)
             img_bgr = img_np[:, :, ::-1]
@@ -523,6 +526,7 @@ elif page == "📷 Live Recognition":
 
         uploaded_file = st.file_uploader("Choose an image file", type=["jpg", "jpeg", "png"])
         if uploaded_file is not None:
+            _require_detector()
             image_pil = Image.open(uploaded_file).convert("RGB")
             img_np = np.array(image_pil)
             img_bgr = img_np[:, :, ::-1]
@@ -706,10 +710,8 @@ Optimizer: Adam | Loss: Sparse Categorical Crossentropy""",
             progress_bar.progress(1.0)
             st.success(f"🎉 **Training Complete!** Model evaluated on **{metrics['test_samples']} unseen test samples**.")
 
-            # Reload predictor in session state
             st.session_state.predictor.load_model_and_labels()
 
-            # Display key results
             res1, res2, res3, res4 = st.columns(4)
             with res1:
                 render_metric_card("Test Accuracy", f"{metrics['accuracy'] * 100:.2f}%")
@@ -736,7 +738,6 @@ elif page == "📊 Evaluation":
     if not metrics:
         st.warning("⚠️ No evaluation metrics found. Please train the model in the **⚡ Model Training** tab first.")
     else:
-        # Top KPI Cards
         k1, k2, k3, k4, k5 = st.columns(5)
         with k1:
             render_metric_card("Test Accuracy", f"{metrics['accuracy'] * 100:.2f}%", f"{metrics.get('test_samples', 0)} samples")
@@ -751,7 +752,6 @@ elif page == "📊 Evaluation":
 
         st.markdown("---")
 
-        # Visualizations: Confusion Matrix & Training Curves
         v_col1, v_col2 = st.columns([1, 1.3])
 
         with v_col1:
@@ -769,13 +769,11 @@ elif page == "📊 Evaluation":
 
         st.markdown("---")
 
-        # Per-class metrics table
         st.markdown("### 📋 Per-Class Performance Breakdown")
         if "classification_report" in metrics:
             df_class = get_per_class_table(metrics["classification_report"])
             st.dataframe(df_class, use_container_width=True)
 
-        # On-demand re-evaluation button
         st.markdown("---")
         if st.button("🔄 Re-evaluate Model on Cached Test Set"):
             with st.spinner("Running evaluation on cached test set..."):
@@ -798,9 +796,17 @@ elif page == "📜 Prediction History":
     )
 
     db: DatabaseManager = st.session_state.db
-    stats = db.get_prediction_statistics()
+    try:
+        stats = db.get_prediction_statistics()
+    except Exception:
+        stats = {
+            "total_predictions": 0,
+            "average_confidence": 0.0,
+            "max_confidence": 0.0,
+            "most_frequent_gesture": "None",
+            "gesture_breakdown": {}
+        }
 
-    # KPI summary row
     h1, h2, h3, h4 = st.columns(4)
     with h1:
         render_metric_card("Total Inferences", str(stats["total_predictions"]))
@@ -813,7 +819,6 @@ elif page == "📜 Prediction History":
 
     st.markdown("---")
 
-    # Filters and Actions Row
     f_col1, f_col2, f_col3, f_col4 = st.columns([2, 2, 2, 2])
 
     with f_col1:
@@ -837,7 +842,6 @@ elif page == "📜 Prediction History":
             use_container_width=True
         )
 
-    # Predictions Table
     df_preds = db.get_predictions_df(
         limit=record_limit,
         gesture_filter=selected_gesture if selected_gesture != "All" else None,
@@ -849,12 +853,10 @@ elif page == "📜 Prediction History":
     if len(df_preds) == 0:
         st.info("No prediction records match the current filter criteria.")
     else:
-        # Style confidence as percentage
         display_df = df_preds.copy()
         display_df["confidence"] = display_df["confidence"].apply(lambda v: f"{float(v) * 100:.2f}%")
         st.dataframe(display_df, use_container_width=True)
 
-    # Frequency Chart
     if stats["gesture_breakdown"]:
         st.markdown("### 📊 Gesture Frequency Distribution")
         df_chart = pd.DataFrame(
@@ -863,7 +865,6 @@ elif page == "📜 Prediction History":
         ).set_index("Gesture")
         st.bar_chart(df_chart)
 
-    # Danger Zone: Clear records
     st.markdown("---")
     with st.expander("🗑️ Database Maintenance"):
         st.write("Clear all prediction history from the SQLite database.")
@@ -873,7 +874,6 @@ elif page == "📜 Prediction History":
             st.success("All prediction records have been cleared.")
             st.rerun()
 
-    # Training Sessions History
     st.markdown("---")
     st.markdown("### 🕒 Model Training Sessions Log")
     df_train_logs = db.get_training_sessions_df(limit=25)
@@ -883,3 +883,154 @@ elif page == "📜 Prediction History":
         st.dataframe(train_disp, use_container_width=True)
     else:
         st.info("No model training sessions logged yet.")
+
+""",
+"path":"app.py",
+"repo":"Varshinisrepo-81/Hand-gesture-AI-using-Deep-learning"
+},{"content":"""
+Gesture Prediction Engine for Hand Gesture Recognition.
+Connects landmark preprocessor with the trained TensorFlow/Keras deep learning model.
+Handles class mapping, probability distribution, and low-confidence filtering.
+"""
+
+import os
+os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
+
+import sys
+import json
+import numpy as np
+from typing import Dict, Any, Optional, List
+
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
+from src.preprocessor import normalize_landmarks, extract_landmarks_from_mediapipe, GESTURE_CLASSES
+from src.model import load_gesture_model, DEFAULT_MODEL_PATH
+
+DEFAULT_LABEL_PATH = os.path.join(PROJECT_ROOT, "models", "label_encoder.json")
+
+
+class GesturePredictor:
+    """Performs real-time gesture inference given hand landmarks."""
+
+    def __init__(self, model_path: str = DEFAULT_MODEL_PATH, label_path: str = DEFAULT_LABEL_PATH):
+        self.model_path = model_path
+        self.label_path = label_path
+        self.model = None
+        self.label_map = {i: name for i, name in enumerate(GESTURE_CLASSES)}
+        self.load_model_and_labels()
+
+    def is_model_loaded(self) -> bool:
+        """Returns True if the deep learning model is successfully loaded."""
+        return self.model is not None
+
+    def load_model_and_labels(self) -> bool:
+        """Loads or reloads the trained Keras model and label mapping."""
+        if os.path.exists(self.model_path):
+            try:
+                self.model = load_gesture_model(self.model_path)
+            except Exception as e:
+                print(f"[!] Error loading model: {e}")
+                self.model = None
+
+        if os.path.exists(self.label_path):
+            try:
+                with open(self.label_path, "r", encoding="utf-8") as f:
+                    raw_map = json.load(f)
+                    self.label_map = {int(k): v for k, v in raw_map.items()}
+            except Exception as e:
+                print(f"[!] Error loading label mapping: {e}")
+
+        return self.model is not None
+
+    def predict(
+        self,
+        landmarks: Any,
+        confidence_threshold: float = 0.60
+    ) -> Dict[str, Any]:
+        """
+        Runs neural network inference on raw hand landmarks.
+
+        Args:
+            landmarks: MediaPipe landmark list or numpy coordinate array (21, 3).
+            confidence_threshold: Threshold below which prediction is marked 'Uncertain'.
+
+        Returns:
+            Dictionary with prediction results, confidence score, and probabilities.
+        """
+        if self.model is None:
+            return {
+                "gesture": "Model Not Loaded",
+                "raw_gesture": "None",
+                "confidence": 0.0,
+                "is_low_confidence": True,
+                "probabilities": {},
+                "normalized_features": None,
+                "error": "No trained model found on disk. Please train the model first."
+            }
+
+        if isinstance(landmarks, (list, tuple)):
+            if len(landmarks) == 0:
+                return {
+                    "gesture": "No Hand Detected",
+                    "raw_gesture": "None",
+                    "confidence": 0.0,
+                    "is_low_confidence": True,
+                    "probabilities": {},
+                    "normalized_features": None,
+                    "error": "No hand landmarks detected."
+                }
+            if hasattr(landmarks[0], "x"):
+                raw_coords = extract_landmarks_from_mediapipe(landmarks)
+            else:
+                raw_coords = np.asarray(landmarks, dtype=np.float32)
+        else:
+            raw_coords = np.asarray(landmarks, dtype=np.float32)
+
+        try:
+            norm_features = normalize_landmarks(raw_coords)
+        except Exception as e:
+            return {
+                "gesture": "Invalid Landmark Input",
+                "raw_gesture": "None",
+                "confidence": 0.0,
+                "is_low_confidence": True,
+                "probabilities": {},
+                "normalized_features": None,
+                "error": str(e)
+            }
+
+        input_tensor = np.expand_dims(norm_features, axis=0)
+        probs = self.model.predict(input_tensor, verbose=0)[0]
+
+        pred_idx = int(np.argmax(probs))
+        confidence = float(probs[pred_idx])
+        raw_gesture = self.label_map.get(pred_idx, f"Class {pred_idx}")
+
+        is_low_conf = confidence < confidence_threshold
+        if is_low_conf:
+            gesture_display = "Uncertain / Low Confidence"
+        else:
+            gesture_display = raw_gesture
+
+        prob_dict = {
+            self.label_map.get(i, f"Class {i}"): round(float(probs[i]), 4)
+            for i in range(len(probs))
+        }
+
+        return {
+            "gesture": gesture_display,
+            "raw_gesture": raw_gesture,
+            "confidence": round(confidence, 4),
+            "is_low_confidence": is_low_conf,
+            "probabilities": prob_dict,
+            "normalized_features": norm_features,
+            "error": None
+        }
+
+""",
+"path":"src/predictor.py",
+"repo":"Varshinisrepo-81/Hand-gesture-AI-using-Deep-learning"
+}]} mbalactic in this? Need careful: JSON content includes triple quotes with 
